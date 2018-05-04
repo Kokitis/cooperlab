@@ -9,7 +9,7 @@ import pathlib
 from typing import *
 import argparse
 import os
-from pprint import pprint
+
 from functools import partial
 
 print = partial(print, flush = True)
@@ -19,7 +19,7 @@ DEBUG = os.name == 'nt'
 
 if not DEBUG:
 	parser = argparse.ArgumentParser(
-		description = "This is a Breseq Mutation Parser.  It Currently only SNPs, Missing Coverage, "
+		description = "This is a Breseq Mutation Parser.  It Currently outputs only SNPs, Missing Coverage, "
 					  "and New Junction Evidence (wont output junction repeats).  "
 					  "In order to run this program please put all the Breseq directores into a master directory and then "
 					  "parse that directory with the program's -d flag.")
@@ -27,7 +27,7 @@ if not DEBUG:
 	parser.add_argument(
 		'-d', '--directory',
 		action = "store",
-		help = "Use this flag to indicate the index file you would like to parse",
+		help = "Use this flag to indicate the folder with the samples you would like to parse. Each subfolder should have an index.html file.",
 		dest = "directory"
 	)
 	parser.add_argument(
@@ -41,7 +41,7 @@ if not DEBUG:
 	parser.add_argument(
 		'-o', '--output',
 		action = "store",
-		help = "Name of the output file(s) or folder. Defaults to './breseq_output'",
+		help = "Name of the output file (if in excel format) or folder. Should be a folder if outputting as text files. Defaults to './breseq_output'",
 		default = 'breseq_output',
 		dest = 'filename'
 	)
@@ -116,11 +116,19 @@ class Breseq:
 			snp_table, coverage_table, junction_table
 
 		"""
-		index_file = folder / "output" / "index.html"
+
+		if not (folder.is_file() and folder.exists()):
+
+			index_file = folder / "output" / "index.html"
+
+			if not index_file.exists():
+				index_file = folder / "index.html"
+				if not index_file.exists():
+					print("\tThe index.html file is missing. Ignoring folder.")
+					return [], [], []
+		else:
+			index_file = folder
 		print("\tIndex File: ", index_file)
-		if not index_file.exists():
-			print("\tThe index.html file is missing. Ignoring folder.")
-			return [], [], []
 		sample_name = folder.name
 		snp_headers, snp_table, coverage_soup, junction_soup = self._parseIndexFile(index_file)
 		parsed_snp_table = self._parsePredictedMutations(sample_name, snp_headers, snp_table)
@@ -211,7 +219,7 @@ class Breseq:
 		return snp_header_soup, snp_table, coverage_soup, junction_soup
 
 	@staticmethod
-	def _parsePredictedMutations(sample_name: str, headers: List[str], rows: List) -> Table:
+	def _parsePredictedMutations(sample_name: str, headers: List[str], rows: BeautifulSoup) -> Table:
 		"""
 			Parses the SNP table.
 		Parameters
@@ -234,9 +242,14 @@ class Breseq:
 
 			if len(values) > 1:
 				row = {k: v for k, v in zip(headers, values)}
-				row['Sample'] = sample_name
-
-				row['position'] = toNumber(row['position'])
+				try:
+					row['Sample'] = sample_name
+				except:
+					row['Sample'] = "noname"
+				try:
+					row['position'] = toNumber(row['position'])
+				except KeyError:
+					row['position'] = None
 				try:
 					row['freq %'] = float(row['freq'][:-1])
 					row.pop('freq')
